@@ -2,6 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -20,42 +21,47 @@ import Data.List.NonEmpty as NE
 import GHC.Generics
 
 -- Ideal interface for getting the websocket response
--- class (DomBuilder t m,
---        MonadRWS (Event t ByteString) (Event t [ByteString]) () m)
---   => WithWebSocket t m where
---   getResponse :: (ToJSON req, FromJSON resp)
---     => Event t req -> m (Event t resp)
-
--- newtype WithWebSocket t m =
---   WithWebSocket
---   { withWS :: m a -> RWST (Event t ByteString) (Event t [ByteString]) () m a}
+class (DomBuilder t m)
+  => WithWebSocket t m where
+  getResponse :: (ToJSON req, FromJSON resp)
+    => Event t req -> m (Event t resp)
 
 enc :: (ToJSON a, Functor f) => f a -> f [ByteString]
 enc mes = (:[]) <$> encode <$> mes
 
--- instance (DomBuilder t m,
---        MonadRWS (Event t ByteString) (Event t [ByteString]) () m)
---   => WithWebSocket t m where
---   getResponse req = do
---     -- Add Event t ByteString for sendEv
---     tell ((:[]) <$> encode <$> req)
---     -- Provide the response
---     ev <- ask
---     return $ fforMaybe ev decode
+instance WithWebSocket t (WithWebSocketT t m) where
+  getResponse req = do
+    -- Add Event t ByteString for sendEv
+    tell ((:[]) <$> encode <$> req)
+    -- Provide the response
+    ev <- ask
+    return $ fforMaybe ev decode
   -- merge implementation is simple
   -- Just call encode and get bytestring
-main = undefined
 
-type WithWebSocket t m = MonadRWS (Event t ByteString) (Event t [ByteString]) () m
+-- type WithWebSocket t m = MonadRWS (Event t ByteString) (Event t [ByteString]) () m
+ -- (RWST (Event t ByteString) (Event t [ByteString]) () m)
 
-getResponse :: (ToJSON req, FromJSON resp, Reflex t, WithWebSocket t m)
-  => Event t req -> m (Event t resp)
-getResponse req = do
-  -- Add Event t ByteString for sendEv
-  tell ((:[]) <$> encode <$> req)
-  -- Provide the response
-  ev <- ask
-  return $ fforMaybe ev decode
+newtype WithWebSocketT t m a =
+  WithWebSocketT
+  { withWS :: RWST (Event t ByteString) (Event t [ByteString]) () m a}
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO )
+
+instance DomBuilder t m => DomBuilder t (WithWebSocketT t m) where
+  type DomBuilderSpace (WithWebSocketT t m) = DomBuilderSpace m
+  -- inputElement = lift inputElement
+  -- textAreaElement = lift textAreaElement
+  -- selectElement = lift selectElement
+
+
+-- getResponse :: (ToJSON req, FromJSON resp, Reflex t, WithWebSocket t m)
+--   => Event t req -> m (Event t resp)
+-- getResponse req = do
+--   -- Add Event t ByteString for sendEv
+--   tell ((:[]) <$> encode <$> req)
+--   -- Provide the response
+--   ev <- ask
+--   return $ fforMaybe ev decode
 
 data Resp = Resp
   deriving (Show, Generic)
@@ -73,7 +79,7 @@ instance FromJSON Resp
 showResp :: Resp -> String
 showResp = show
 
-codeToRun :: (DomBuilder t m, WithWebSocket t m) => m ()
+codeToRun :: (WithWebSocket t m) => m ()
 codeToRun = do
   ev <- button "hello"
   let ev2 = const Message <$> ev
@@ -81,6 +87,10 @@ codeToRun = do
   let ev3 = showResp <$> resp
   return ()
 
+myWidget :: (DomBuilder t m) => m ()
+myWidget = do
+  (_,_) <- withWSConnection "url" never False codeToRun
+  return ()
 -- Run code which shares single WS Connection
 withWSConnection ::
   (DomBuilder t m, WithWebSocket t mw)
