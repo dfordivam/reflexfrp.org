@@ -116,7 +116,7 @@ myWidget ::
   => m ()
 myWidget = do
   text "Test WithWebsocket"
-  (_,_) <- withWSConnection "url" never False codeToRun
+  (_,_) <- withWSConnection "ws://echo.websocket.org/" never False codeToRun
   return ()
 
 main = mainWidget myWidget
