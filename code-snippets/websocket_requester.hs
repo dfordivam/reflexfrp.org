@@ -14,6 +14,7 @@ import Data.ByteString
 import Data.Text
 import Control.Monad.Fix
 import Control.Monad.IO.Class
+import Control.Monad.Primitive
 import Reflex.Requester.Class
 import Reflex.Requester.Base
 
@@ -21,21 +22,26 @@ type family Req :: * -> *
 type family Resp :: * -> *
 type WithWebSocketT t m a = RequesterT t Req Resp m a
 
+type instance Req = Maybe
+type instance Resp = Maybe
+
 codeToRun ::
-  (DomBuilder t m, PostBuild t m,
+  (DomBuilder t m, PostBuild t m, PrimMonad m,
    MonadFix m, HasWebView m, MonadHold t m,
    PerformEvent t m, MonadIO m, MonadIO (Performable m),
    TriggerEvent t m)
   => WithWebSocketT t m ()
 codeToRun = do
   ev <- button "hello"
-  -- let ev2 = Message <$ ev
-  -- resp <- getResponse ev2
+  let ev2 = Just 2 <$ ev
+  resp <- requesting ev2
+  d <- holdDyn Nothing resp
+  display d
   -- let ev3 = showResp <$> resp
   return ()
 
 withWSConnection ::
-  (DomBuilder t m, PostBuild t m,
+  (DomBuilder t m, PostBuild t m, PrimMonad m,
    MonadFix m, HasWebView m, MonadHold t m,
    PerformEvent t m, MonadIO m, MonadIO (Performable m),
    TriggerEvent t m)
@@ -60,7 +66,7 @@ withWSConnection url closeEv reconnect wdgt = do
   return (val, ws)
 
 myWidget ::
-  (DomBuilder t m, PostBuild t m,
+  (DomBuilder t m, PostBuild t m, PrimMonad m,
    MonadFix m, HasWebView m, MonadHold t m,
    PerformEvent t m, MonadIO m, MonadIO (Performable m),
    TriggerEvent t m)
