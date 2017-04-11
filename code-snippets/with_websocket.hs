@@ -15,6 +15,7 @@ import Data.Aeson
 import Data.ByteString.Lazy
 import Control.Monad.RWS.Class
 import Control.Monad.RWS
+import Control.Monad.Trans.Control
 import Data.Text
 import Data.List.NonEmpty as NE
 
@@ -29,8 +30,9 @@ class (DomBuilder t m)
 enc :: (ToJSON a, Functor f) => f a -> f [ByteString]
 enc mes = (:[]) <$> encode <$> mes
 
-instance WithWebSocket t (WithWebSocketT t m) where
+instance (DomBuilder t m) => WithWebSocket t (WithWebSocketT t m) where
   getResponse req = do
+    -- (WithWebSocketT rwst)
     -- Add Event t ByteString for sendEv
     tell ((:[]) <$> encode <$> req)
     -- Provide the response
@@ -42,13 +44,62 @@ instance WithWebSocket t (WithWebSocketT t m) where
 -- type WithWebSocket t m = MonadRWS (Event t ByteString) (Event t [ByteString]) () m
  -- (RWST (Event t ByteString) (Event t [ByteString]) () m)
 
+instance (Reflex t) => MonadTransControl (WithWebSocketT t) where
+  type StT (WithWebSocketT t) a = StT (RWST (Event t ByteString) (Event t [ByteString]) ()) a
+  liftWith = defaultLiftWith WithWebSocketT unWithWebSocketT
+  restoreT = defaultRestoreT WithWebSocketT
+
 newtype WithWebSocketT t m a =
   WithWebSocketT
-  { withWS :: RWST (Event t ByteString) (Event t [ByteString]) () m a}
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO )
+  { unWithWebSocketT :: RWST (Event t ByteString) (Event t [ByteString]) () m a}
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans)
 
+instance (Reflex t, Monad m) =>
+  MonadReader (Event t ByteString) (WithWebSocketT t m)
+instance (Reflex t, Monad m) =>
+  MonadWriter (Event t [ByteString]) (WithWebSocketT t m)
 instance DomBuilder t m => DomBuilder t (WithWebSocketT t m) where
   type DomBuilderSpace (WithWebSocketT t m) = DomBuilderSpace m
+  -- {-# INLINABLE textNode #-}
+  -- textNode cfg = lift $ textNode cfg
+  element t cfg child = do
+    (ret, w) <- liftWith $ \run -> do
+      let myEl r = do
+            (a,_,w) <- r
+            ret <- element t (liftElementConfig cfg) (pure a)
+            return (ret, w)
+      myEl (run child)
+    tell w
+    return ret
+
+      -- let myRun b = do
+      --       (a,_, w) <- run b
+      --       return a
+      -- element t (liftElementConfig cfg) $ myRun child
+  {-# INLINABLE element #-}
+  -- {-# INLINABLE element #-}
+  -- element t cfg child = lift $ element t cfg $ run
+  --   --liftWith $ \run -> element t cfg $ run child
+  -- {-# INLINABLE inputElement #-}
+  -- inputElement cfg = lift $ inputElement cfg
+  -- {-# INLINABLE textAreaElement #-}
+  -- textAreaElement cfg = lift $ textAreaElement cfg
+  {-# INLINABLE selectElement #-}
+  selectElement cfg child = do
+    (ret, w) <- liftWith $ \run -> do
+      let myEl r = do
+            (a,_,w) <- r
+            ret <- selectElement cfg' (pure a)
+            return (ret, w)
+          cfg' = cfg
+                  { _selectElementConfig_elementConfig =
+                    liftElementConfig $ _selectElementConfig_elementConfig cfg
+                  }
+      myEl (run child)
+    tell w
+    return ret
+
+instance (MonadAdjust t m) => MonadAdjust t (WithWebSocketT t m)
   -- inputElement = lift inputElement
   -- textAreaElement = lift textAreaElement
   -- selectElement = lift selectElement
@@ -79,18 +130,18 @@ instance FromJSON Resp
 showResp :: Resp -> String
 showResp = show
 
-codeToRun :: (WithWebSocket t m) => m ()
-codeToRun = do
-  ev <- button "hello"
-  let ev2 = const Message <$> ev
-  resp <- getResponse ev2
-  let ev3 = showResp <$> resp
-  return ()
+-- codeToRun :: (WithWebSocket t m) => m ()
+-- codeToRun = do
+--   ev <- button "hello"
+--   let ev2 = const Message <$> ev
+--   resp <- getResponse ev2
+--   let ev3 = showResp <$> resp
+--   return ()
 
-myWidget :: (DomBuilder t m) => m ()
-myWidget = do
-  (_,_) <- withWSConnection "url" never False codeToRun
-  return ()
+-- myWidget :: (DomBuilder t m) => m ()
+-- myWidget = do
+--   (_,_) <- withWSConnection "url" never False codeToRun
+--   return ()
 -- Run code which shares single WS Connection
 withWSConnection ::
   (DomBuilder t m, WithWebSocket t mw)
