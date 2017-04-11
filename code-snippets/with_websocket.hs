@@ -12,7 +12,8 @@
 
 import Reflex.Dom
 import Data.Aeson
-import Data.ByteString.Lazy
+import qualified Data.ByteString.Lazy as BSL
+import Data.ByteString
 import Control.Monad.RWS.Class
 import Control.Monad.RWS
 import Control.Monad.Trans.Control
@@ -30,26 +31,23 @@ class (DomBuilder t m)
 newtype WithWebSocketT t m a =
   WithWebSocketT
   { unWithWebSocketT :: RWST (Event t ByteString) (Event t [ByteString]) () m a}
-  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans)
+  deriving (Functor, Applicative, Monad, MonadFix, MonadIO, MonadTrans,
+           MonadReader (Event t ByteString), MonadWriter (Event t [ByteString]))
 
 instance (DomBuilder t m) => WithWebSocket t (WithWebSocketT t m) where
   getResponse req = do
     -- (WithWebSocketT rwst)
     -- Add Event t ByteString for sendEv
-    tell ((:[]) <$> encode <$> req)
+    tell ((:[]) <$> BSL.toStrict <$> encode <$> req)
     -- Provide the response
     ev <- ask
-    return $ fforMaybe ev decode
+    return $ fforMaybe ev decodeStrict
 
 instance (Reflex t) => MonadTransControl (WithWebSocketT t) where
   type StT (WithWebSocketT t) a = StT (RWST (Event t ByteString) (Event t [ByteString]) ()) a
   liftWith = defaultLiftWith WithWebSocketT unWithWebSocketT
   restoreT = defaultRestoreT WithWebSocketT
 
-instance (Reflex t, Monad m) =>
-  MonadReader (Event t ByteString) (WithWebSocketT t m)
-instance (Reflex t, Monad m) =>
-  MonadWriter (Event t [ByteString]) (WithWebSocketT t m)
 instance DomBuilder t m => DomBuilder t (WithWebSocketT t m) where
   type DomBuilderSpace (WithWebSocketT t m) = DomBuilderSpace m
   {-# INLINABLE element #-}
@@ -75,6 +73,53 @@ instance DomBuilder t m => DomBuilder t (WithWebSocketT t m) where
     return ret
 
 instance (MonadAdjust t m) => MonadAdjust t (WithWebSocketT t m)
+  -- runWithReplace a0 a' = InputDisabledT $ runWithReplace (coerce a0) (coerceEvent a')
+  -- traverseDMapWithKeyWithAdjust f dm0 dm' = InputDisabledT $ traverseDMapWithKeyWithAdjust (\k v -> runInputDisabledT $ f k v) (coerce dm0) (coerceEvent dm')
+  -- traverseDMapWithKeyWithAdjustWithMove f dm0 dm' = InputDisabledT $ traverseDMapWithKeyWithAdjustWithMove (\k v -> runInputDisabledT $ f k v) (coerce dm0) (coerceEvent dm')
+
+withWSConnection ::
+  (DomBuilder t m, PostBuild t m,
+   MonadFix m, HasWebView m,
+   PerformEvent t m, MonadIO m, MonadIO (Performable m),
+   TriggerEvent t m)
+  => Text -- URL
+  -> Event t (Word, Text) -- close event
+  -> Bool -- reconnect
+  -> WithWebSocketT t m a
+  -> m (a, WebSocket t)
+withWSConnection url closeEv reconnect wdgt = do
+  rec
+    let
+      recvEv = _webSocket_recv ws
+    (val,_, evList) <- runRWST (unWithWebSocketT wdgt) recvEv ()
+
+    let
+      -- sendEv = NE.toList <$> mergeList evList
+      sendEv = evList
+      conf = WebSocketConfig sendEv closeEv reconnect
+    ws <- webSocket url conf
+  return (val, ws)
+
+codeToRun :: (DomBuilder t m) => WithWebSocketT t m ()
+codeToRun = do
+  ev <- button "hello"
+  let ev2 = const Message <$> ev
+  resp <- getResponse ev2
+  let ev3 = showResp <$> resp
+  return ()
+
+myWidget ::
+  (DomBuilder t m, PostBuild t m,
+   MonadFix m, HasWebView m,
+   PerformEvent t m, MonadIO m, MonadIO (Performable m),
+   TriggerEvent t m)
+  => m ()
+myWidget = do
+  text "Test WithWebsocket"
+  (_,_) <- withWSConnection "url" never False codeToRun
+  return ()
+
+main = mainWidget myWidget
 
 data Resp = Resp
   deriving (Show, Generic)
@@ -91,39 +136,3 @@ instance FromJSON Resp
 
 showResp :: Resp -> String
 showResp = show
-
--- codeToRun :: (WithWebSocket t m) => m ()
--- codeToRun = do
---   ev <- button "hello"
---   let ev2 = const Message <$> ev
---   resp <- getResponse ev2
---   let ev3 = showResp <$> resp
---   return ()
-
--- myWidget :: (DomBuilder t m) => m ()
--- myWidget = do
---   (_,_) <- withWSConnection "url" never False codeToRun
---   return ()
--- Run code which shares single WS Connection
-withWSConnection ::
-  (DomBuilder t m, WithWebSocket t mw)
-  => Text -- URL
-  -> Event t (Word, Text) -- close event
-  -> Bool -- reconnect
-  -> mw a
-  -> m (a, WebSocket t)
-withWSConnection url closeEv reconnect wdgt = undefined
-  -- rec
-  --   let
-  --     recvEv = _webSocket_recv ws
-  --     f r s = do
-  --         (val, evList) <- listen  wdgt
-  --         return (val,(), evList)
-  --   (val,_, evList) <- runRWST (RWST f) recvEv ()
-
-  --   let
-  --     -- sendEv = NE.toList <$> mergeList evList
-  --     sendEv = evList
-  --     conf = WebSocketConfig sendEv closeEv reconnect
-  --   ws <- webSocket url conf
-  -- return (val, ws)
