@@ -6,37 +6,61 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
 
 import Reflex.Dom
 import Data.Aeson
 import qualified Data.ByteString.Lazy as BSL
 import Data.ByteString
 import Data.Text
+import Control.Monad.Trans
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Control.Monad.Primitive
 import Reflex.Requester.Class
 import Reflex.Requester.Base
 
-type WithWebSocketT t m a = RequesterT t HasToJSON HasFromJSON m a
+type family WebSocketResponseType a :: *
+class
+     (DomBuilder t m, PostBuild t m, PrimMonad m,
+     MonadFix m, HasWebView m, MonadHold t m,
+     PerformEvent t m, MonadIO m, MonadIO (Performable m),
+     TriggerEvent t m)
+  => WithWebSocket t m | m -> t where
+  getWebSocketResponse ::
+    (ToJSON a, FromJSON (WebSocketResponseType a),
+     DomBuilder t m, PostBuild t m, PrimMonad m,
+     MonadFix m, HasWebView m, MonadHold t m,
+     PerformEvent t m, MonadIO m, MonadIO (Performable m),
+     TriggerEvent t m, WithWebSocket t m)
+     => Event t a -> m (Event t (WebSocketResponseType a))
+
+type WithWebSocketT t m = RequesterT t HasToJSON HasFromJSON m
+
+instance PrimMonad m => PrimMonad (WithWebSocketT x m) where
+  type PrimState (WithWebSocketT x m) = PrimState m
+  primitive = lift . primitive
+
+instance
+     (DomBuilder t m, PostBuild t m, PrimMonad m,
+     MonadFix m, HasWebView m, MonadHold t m,
+     PerformEvent t m, MonadIO m, MonadIO (Performable m),
+     TriggerEvent t m)
+  => WithWebSocket t (WithWebSocketT t m) where
+  getWebSocketResponse req = do
+    resp <- requesting $ HasToJSON <$> req
+    return $ (\(HasFromJSON b) -> b) <$> resp
 
 data HasToJSON a where
   HasToJSON :: (ToJSON a) => a -> HasToJSON a
 data HasFromJSON a where
   HasFromJSON :: (FromJSON (WebSocketResponseType a)) => (WebSocketResponseType a) -> HasFromJSON a
 
-type family WebSocketResponseType a :: *
+-- type family WebSocketResponseType a :: *
 
-getWebSocketResponse ::
-  (ToJSON a, FromJSON (WebSocketResponseType a),
-   DomBuilder t m, PostBuild t m, PrimMonad m,
-   MonadFix m, HasWebView m, MonadHold t m,
-   PerformEvent t m, MonadIO m, MonadIO (Performable m),
-   TriggerEvent t m)
-  => Event t a -> WithWebSocketT t m (Event t (WebSocketResponseType a))
-getWebSocketResponse req = do
-  resp <- requesting $ HasToJSON <$> req
-  return $ (\(HasFromJSON b) -> b) <$> resp
 
 withWSConnection ::
   (DomBuilder t m, PostBuild t m, PrimMonad m,
@@ -71,8 +95,8 @@ codeToRun ::
   (DomBuilder t m, PostBuild t m, PrimMonad m,
    MonadFix m, HasWebView m, MonadHold t m,
    PerformEvent t m, MonadIO m, MonadIO (Performable m),
-   TriggerEvent t m)
-  => WithWebSocketT t m ()
+   TriggerEvent t m, WithWebSocket t m)
+  => m ()
 codeToRun = do
   ev <- button "hello"
   respEv <- getWebSocketResponse ('f' <$ ev)
