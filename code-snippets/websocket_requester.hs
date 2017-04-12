@@ -3,13 +3,9 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
 
 import Reflex.Dom
 import Data.Aeson
@@ -23,20 +19,7 @@ import Control.Monad.Primitive
 import Reflex.Requester.Class
 import Reflex.Requester.Base
 
-type family WebSocketResponseType a :: *
-class
-     (DomBuilder t m, PostBuild t m, PrimMonad m,
-     MonadFix m, HasWebView m, MonadHold t m,
-     PerformEvent t m, MonadIO m, MonadIO (Performable m),
-     TriggerEvent t m)
-  => WithWebSocket t m | m -> t where
-  getWebSocketResponse ::
-    (ToJSON a, FromJSON (WebSocketResponseType a),
-     DomBuilder t m, PostBuild t m, PrimMonad m,
-     MonadFix m, HasWebView m, MonadHold t m,
-     PerformEvent t m, MonadIO m, MonadIO (Performable m),
-     TriggerEvent t m, WithWebSocket t m)
-     => Event t a -> m (Event t (WebSocketResponseType a))
+import WithWebSocket.Class
 
 type WithWebSocketT t m = RequesterT t HasToJSON HasFromJSON m
 
