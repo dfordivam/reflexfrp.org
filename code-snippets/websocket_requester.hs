@@ -18,12 +18,18 @@ import Control.Monad.Primitive
 import Reflex.Requester.Class
 import Reflex.Requester.Base
 
-type family Req :: * -> *
-type family Resp :: * -> *
-type WithWebSocketT t m a = RequesterT t Req Resp m a
+type WithWebSocketT t m a = RequesterT t HasToJSON HasFromJSON m a
 
-type instance Req = Maybe
-type instance Resp = Maybe
+data HasToJSON a where
+  HasToJSON :: (ToJSON a) => a -> HasToJSON a
+data HasFromJSON a where
+  HasFromJSON :: (FromJSON (WebSocketResponseType a)) => (WebSocketResponseType a) -> HasFromJSON a
+
+type family WebSocketResponseType a :: *
+
+-- Example Code
+type instance WebSocketResponseType String = Char
+type instance WebSocketResponseType Char = Int
 
 codeToRun ::
   (DomBuilder t m, PostBuild t m, PrimMonad m,
@@ -33,12 +39,21 @@ codeToRun ::
   => WithWebSocketT t m ()
 codeToRun = do
   ev <- button "hello"
-  let ev2 = Just 2 <$ ev
-  resp <- requesting ev2
-  d <- holdDyn Nothing resp
+  respEv <- getWebSocketResponse ('f' <$ ev)
+  d <- holdDyn 0 respEv
   display d
-  -- let ev3 = showResp <$> resp
   return ()
+
+getWebSocketResponse ::
+  (ToJSON a, FromJSON (WebSocketResponseType a),
+   DomBuilder t m, PostBuild t m, PrimMonad m,
+   MonadFix m, HasWebView m, MonadHold t m,
+   PerformEvent t m, MonadIO m, MonadIO (Performable m),
+   TriggerEvent t m)
+  => Event t a -> WithWebSocketT t m (Event t (WebSocketResponseType a))
+getWebSocketResponse req = do
+  resp <- requesting $ HasToJSON <$> req
+  return $ (\(HasFromJSON b) -> b) <$> resp
 
 withWSConnection ::
   (DomBuilder t m, PostBuild t m, PrimMonad m,
@@ -56,8 +71,8 @@ withWSConnection url closeEv reconnect wdgt = do
       recvEv = _webSocket_recv ws
     -- (val,_, evList) <- runRWST (unWithWebSocketT wdgt) recvEv ()
       evList = never :: Reflex t => (Event t [ByteString])
-
-    (val, _) <- runRequesterT wdgt never
+      recvEvMap = never
+    (val, sendEvMap) <- runRequesterT wdgt recvEvMap
     let
       -- sendEv = NE.toList <$> mergeList evList
       sendEv = evList
