@@ -27,23 +27,6 @@ data HasFromJSON a where
 
 type family WebSocketResponseType a :: *
 
--- Example Code
-type instance WebSocketResponseType String = Char
-type instance WebSocketResponseType Char = Int
-
-codeToRun ::
-  (DomBuilder t m, PostBuild t m, PrimMonad m,
-   MonadFix m, HasWebView m, MonadHold t m,
-   PerformEvent t m, MonadIO m, MonadIO (Performable m),
-   TriggerEvent t m)
-  => WithWebSocketT t m ()
-codeToRun = do
-  ev <- button "hello"
-  respEv <- getWebSocketResponse ('f' <$ ev)
-  d <- holdDyn 0 respEv
-  display d
-  return ()
-
 getWebSocketResponse ::
   (ToJSON a, FromJSON (WebSocketResponseType a),
    DomBuilder t m, PostBuild t m, PrimMonad m,
@@ -79,6 +62,23 @@ withWSConnection url closeEv reconnect wdgt = do
       conf = WebSocketConfig sendEv closeEv reconnect
     ws <- webSocket url conf
   return (val, ws)
+
+-- Example Code
+type instance WebSocketResponseType String = Char
+type instance WebSocketResponseType Char = Int
+
+codeToRun ::
+  (DomBuilder t m, PostBuild t m, PrimMonad m,
+   MonadFix m, HasWebView m, MonadHold t m,
+   PerformEvent t m, MonadIO m, MonadIO (Performable m),
+   TriggerEvent t m)
+  => WithWebSocketT t m ()
+codeToRun = do
+  ev <- button "hello"
+  respEv <- getWebSocketResponse ('f' <$ ev)
+  d <- holdDyn 0 respEv
+  display d
+  return ()
 
 myWidget ::
   (DomBuilder t m, PostBuild t m, PrimMonad m,
