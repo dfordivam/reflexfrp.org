@@ -57,10 +57,18 @@ withWSConnection ::
 withWSConnection url closeEv reconnect wdgt = do
   rec
     let
-      recvEv = _webSocket_recv ws
-    -- (val,_, evList) <- runRWST (unWithWebSocketT wdgt) recvEv ()
       evList = never :: Reflex t => (Event t [ByteString])
-      recvEvMap = never
+      recvEvMap = getReqs <$> sendEvMap
+
+      getReqs dmap = mergeWith (<>) $
+        getReq <$> (keys dmap)
+
+      getReq ::
+        (FromJSON (WebSocketResponseType v))
+        => Tag m v
+        -> Event t (DMap (Tag m) HasFromJSON)
+      getReq t = fmapMaybe (fromBS t) (_webSocket_recv ws)
+
     (val, sendEvMap) <- runRequesterT wdgt recvEvMap
     let
       -- sendEv = NE.toList <$> mergeList evList
@@ -68,3 +76,13 @@ withWSConnection url closeEv reconnect wdgt = do
       conf = WebSocketConfig sendEv closeEv reconnect
     ws <- webSocket url conf
   return (val, ws)
+
+fromBS ::
+  (FromJSON (WebSocketResponseType v))
+  => Tag m v
+  -> ByteString
+  -> Maybe (DMap (Tag m) (HasFromJSON))
+fromBS t bs =
+  case decodeStrict bs of
+    Nothing -> Nothing
+    Just v -> Just (Data.Dependent.Map.singleton t (HasFromJSON v))
