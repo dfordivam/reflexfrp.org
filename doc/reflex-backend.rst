@@ -22,7 +22,7 @@ Motivation
 ----------
 
 May be this architecture simplifies the complex data flows, especially in SNS where the server need to
-move data here and there based on some rules. In a typical REST kind of app I dont see much merit.
+move data here and there based on some rules. In a typical REST kind of app I dont see much merit of this architecture.
 
 
 Twitter example
@@ -30,16 +30,9 @@ Twitter example
 
 An example to illustrate the design::
 
-  -- Instead of MVar can we just use Dynamic
-  -- Are Dynamic values thread-safe
-
-  data App {
-      serverData :: TVar TwitterServerData
-  }
-
   data TwitterServerData {
-      users :: Dynamic t (Map UserId User)
-    , activeFeeds :: Dynamic t [UserId]
+      users :: Dynamic t (Map UserId User) -- Main DB of users
+    , activeFeeds :: Dynamic t [UserId] -- Current logged in users, who want an active feed
   }
 
   data User {
@@ -52,7 +45,7 @@ An example to illustrate the design::
     , likes :: Dynamic t [UserId]
   }
 
-  -- The interface Req and Resp dont contain Reflex stuff
+
   data Request =
       AddUser User
     | PostTweet UserId Tweet
@@ -77,21 +70,19 @@ An example to illustrate the design::
 
   websocket response
 
+  -- Yesod side handler code, using Conduit
   -- A server require to serve the connections concurrently.
   -- There will be multiple threads executions.
   -- Each user has independent WS connection and handler running in server
-  mainWSHandler :: Conduit Request -> m (Conduit Response)
-  mainWSHandler req = do
+  mainWSHandler :: Conduit Request -> Conduit Response -- Running in IO
+  mainWSHandler request = do
     -- Independent processes/conduits
     -- Response can be generated/pushed even without a request.
-    req ~> handleReq
-    source getResponse
+    request ~> handleReq -- handleReq :: Request -> IO ()
+    source getResponse   -- getResponse :: IO (Response)
 
-    handleReq :: Request -> m ()
-    getResponse :: m (Response)
 
     -- Interface to reflex world
-    -- How to get reflex timeline? share it?
     -- In the start the reflex graph will be created with callbacks from external world
     -- App will contain ``addUser :: (User -> IO ())`` which will trigger an add Event in reflex.
     -- The Dynamic will have a performEvent load which will trigger the response.
