@@ -10,6 +10,7 @@
 {-# LANGUAGE RecursiveDo #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 -- import Reflex.Dom
 import Data.Aeson
@@ -49,14 +50,14 @@ showResp = show
 type family WebSocketResponseType a :: *
 
 data HasToJSON a where
-  HasToJSON :: (ToJSON a) => a -> HasToJSON a
+  HasToJSON :: (FromJSON (WebSocketResponseType a), ToJSON a) => a -> HasToJSON a
 data HasFromJSON a where
   HasFromJSON :: (FromJSON (WebSocketResponseType a)) => (WebSocketResponseType a) -> HasFromJSON a
 
 type instance WebSocketResponseType Int = Text
 type instance WebSocketResponseType Text = Bool
 
-type EncodeM = Writer ([ByteString], Map String (Some (Tag RealWorld )))
+type EncodeM = Writer ([ByteString], Map String (SomeWithFromJSON (Tag RealWorld )))
 
 main = do
 
@@ -67,8 +68,8 @@ main = do
 
       (_,(bs,mapId)) = runWriter $ mapM_ toString dmapVals
 
-  -- print (t1,b1)
-  -- print (t2,b2)
+  print (t1,bs)
+  print (t2,bs)
 
   -- let t1Str = show t1
   --     --t1' = (read t1Str) -- :: Tag RealWorld HasToJSON
@@ -102,7 +103,28 @@ toString ::
      DSum (Tag RealWorld) (HasToJSON)
   -> EncodeM ()
 toString (t :=> HasToJSON a) = do
-  tell ([BSL.toStrict $ encode (show t,a)], Map.singleton (show t) (This t))
+  tell ([BSL.toStrict $ encode (show t,a)], Map.singleton (show t) (ThisWithFromJSON t))
+
+data SomeWithFromJSON tag where
+  ThisWithFromJSON :: (FromJSON (WebSocketResponseType t)) => !(tag t) -> SomeWithFromJSON tag
+
+fromBS' ::
+  (FromJSON (WebSocketResponseType v))
+  => ByteString
+  -> Map String (SomeWithFromJSON (Tag RealWorld ))
+  -> Maybe (DMap (Tag RealWorld) (HasFromJSON))
+fromBS' bs map = join $ join $ g <$> taggy
+  where
+    taggy = case decodeStrict bs of
+      Nothing -> Nothing :: Maybe (String,Value)
+      Just (str,rst) -> Just (str,rst)
+
+    g (str,rst) = f <$> t
+      where
+        t :: Maybe (SomeWithFromJSON (Tag RealWorld))
+        t = Map.lookup str map
+        f (ThisWithFromJSON t') = fromBS2 rst t'
+
 
 fromBS ::
   (FromJSON (WebSocketResponseType v))
@@ -113,3 +135,13 @@ fromBS bs t =
   case decodeStrict bs of
     Nothing -> Nothing
     Just v -> Just (Data.Dependent.Map.singleton t (HasFromJSON v))
+
+fromBS2 ::
+  (FromJSON (WebSocketResponseType v))
+  => Value
+  -> Tag RealWorld v
+  -> Maybe (DMap (Tag RealWorld) (HasFromJSON))
+fromBS2 bs t =
+  case fromJSON bs of
+    Error _ -> Nothing
+    Success v -> Just (Data.Dependent.Map.singleton t (HasFromJSON v))
