@@ -55,7 +55,7 @@ data HasFromJSON a where
   HasFromJSON :: (FromJSON (WebSocketResponseType a)) => (WebSocketResponseType a) -> HasFromJSON a
 
 type instance WebSocketResponseType Int = Text
-type instance WebSocketResponseType Text = Bool
+type instance WebSocketResponseType Text = Text
 
 type EncodeM = Writer ([ByteString], Map String (SomeWithFromJSON (Tag RealWorld )))
 
@@ -74,13 +74,14 @@ main = do
   -- let t1Str = show t1
   --     --t1' = (read t1Str) -- :: Tag RealWorld HasToJSON
 
-  -- let v1 = fromBS b1 t1
-  --     v2 = fromBS b1 t2
-  --     v3 = fromBS b2 t1
-  --     v4 = fromBS b2 t2
+  let v1 = fromBS' mapId b1
+      v2 = fromBS' mapId b2
+      v3 = fromBS' mapId b1
+      v4 = fromBS' mapId b2
+      [b1,b2] = bs
 
-  --     val = Prelude.map isJust [v1,v2,v3,v4]
-  -- print val
+      val = Prelude.map isJust [v1,v2,v3,v4]
+  print val
   return ()
 
 addVal m v = do
@@ -109,11 +110,10 @@ data SomeWithFromJSON tag where
   ThisWithFromJSON :: (FromJSON (WebSocketResponseType t)) => !(tag t) -> SomeWithFromJSON tag
 
 fromBS' ::
-  (FromJSON (WebSocketResponseType v))
-  => ByteString
-  -> Map String (SomeWithFromJSON (Tag RealWorld ))
+     Map String (SomeWithFromJSON (Tag RealWorld ))
+  -> ByteString
   -> Maybe (DMap (Tag RealWorld) (HasFromJSON))
-fromBS' bs map = join $ join $ g <$> taggy
+fromBS' map bs = join $ join $ g <$> taggy
   where
     taggy = case decodeStrict bs of
       Nothing -> Nothing :: Maybe (String,Value)
