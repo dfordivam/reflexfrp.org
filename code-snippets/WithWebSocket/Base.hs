@@ -36,10 +36,7 @@ instance PrimMonad m => PrimMonad (WithWebSocketT x m) where
   primitive = lift . primitive
 
 instance
-     (DomBuilder t m, PostBuild t m, PrimMonad m,
-     MonadFix m, HasWebView m, MonadHold t m,
-     PerformEvent t m, MonadIO m, MonadIO (Performable m),
-     TriggerEvent t m)
+  (MonadWidget t m, PrimMonad m)
   => WithWebSocket t (WithWebSocketT t m) where
   getWebSocketResponse req = do
     resp <- requesting $ HasToJSON <$> req
@@ -52,10 +49,7 @@ data HasFromJSON a where
 
 
 withWSConnection ::
-  (DomBuilder t m, PostBuild t m, PrimMonad m,
-   MonadFix m, HasWebView m, MonadHold t m,
-   PerformEvent t m, MonadIO m, MonadIO (Performable m),
-   TriggerEvent t m)
+  (MonadWidget t m, PrimState m ~ RealWorld)
   => Text -- URL
   -> Event t (Word, Text) -- close event
   -> Bool -- reconnect
@@ -64,23 +58,18 @@ withWSConnection ::
 withWSConnection url closeEv reconnect wdgt = do
   rec
     let
-      evList = never :: Reflex t => (Event t [ByteString])
-      recvEvMap = getReqs <$> sendEvMap
+      respEvMap = getResponseFromBS tagsDyn (_webSocket_recv ws)
 
-      getReqs dmap = mergeWith (<>) $
-        getReq <$> (keys dmap)
+    (val, reqEvMap) <- runRequesterT wdgt respEvMap
 
-      getReq ::
-        (FromJSON (WebSocketResponseType v))
-        => Tag m v
-        -> Event t (DMap (Tag m) HasFromJSON)
-      getReq t = fmapMaybe (fromBS t) (_webSocket_recv ws)
-
-    (val, sendEvMap) <- runRequesterT wdgt recvEvMap
     let
-      -- sendEv = NE.toList <$> mergeList evList
-      sendEv = evList
+      bsAndMapEv = getRequestBS reqEvMap
+      sendEv = fst <$> bsAndMapEv
       conf = WebSocketConfig sendEv closeEv reconnect
+      -- Is it required to remove old tags?
+      storeTags :: TagMap -> TagMap -> TagMap
+      storeTags = (<>)
+    tagsDyn <- foldDyn storeTags Map.empty (snd <$> bsAndMapEv)
     ws <- webSocket url conf
   return (val, ws)
 
