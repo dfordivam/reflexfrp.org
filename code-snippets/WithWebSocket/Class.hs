@@ -1,16 +1,26 @@
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 module WithWebSocket.Class where
 
-import Reflex.Dom
+import Reflex.Dom.Class
+import Reflex.Dom.Builder.Class
+import Reflex.PostBuild.Class
+import Reflex.PerformEvent.Class
+import Reflex.Class
+import Reflex.TriggerEvent.Class
 import Data.Aeson
 import Control.Monad.Trans
 import Control.Monad.Fix
 import Control.Monad.IO.Class
 import Control.Monad.Primitive
+
+-- type
+-- class WebSocketMessage request response | request -> response
+--   getRequestSumT :: request -> sumtype
+--   getRequestT :: sumtype -> Maybe request
+
 
 type family WebSocketResponseType a :: *
 class
