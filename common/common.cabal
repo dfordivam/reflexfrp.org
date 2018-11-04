@@ -1,0 +1,22 @@
+name: common
+version: 0.1
+cabal-version: >= 1.2
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  build-depends: base
+               , categories
+               , containers
+               , dependent-sum
+               , dependent-sum-template
+               , either
+               , lens
+               , mtl
+               , obelisk-route
+               , reflex-dom
+               , text
+               , universe
+  exposed-modules:
+    Common.Api
+    Common.Route

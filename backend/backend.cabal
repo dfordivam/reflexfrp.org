@@ -1,0 +1,52 @@
+name: backend
+version: 0.1
+cabal-version: >= 1.8
+build-type: Simple
+
+library
+  hs-source-dirs: src
+  if impl(ghcjs)
+    buildable: False
+  build-depends: base
+               , common
+               , dependent-sum
+               , frontend
+               , lens
+               , modern-uri
+               , obelisk-backend
+               , obelisk-backend
+               , obelisk-executable-config
+               , obelisk-executable-config-inject
+               , obelisk-route
+               , text
+  exposed-modules:
+    Backend
+  ghc-options: -Wall
+
+executable backend
+  main-is: src-bin/main.hs
+  if impl(ghcjs)
+    buildable: False
+  build-depends: base
+               , backend
+               , common
+               , frontend
+               , lens
+               , modern-uri
+               , obelisk-backend
+               , obelisk-executable-config
+               , obelisk-executable-config-inject
+               , obelisk-route
+               , text
+
+executable youtubepreviews
+  main-is: src-bin/youtubepreviews.hs
+  if impl(ghcjs)
+    buildable: false
+  build-depends: base
+               , bytestring
+               , common
+               , HTTP
+               , network-uri
+               , text
+               , universe
